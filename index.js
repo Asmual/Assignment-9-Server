@@ -40,7 +40,7 @@ async function startServer() {
 
     const doctorsCollection = database.collection("doctors");
     const bookingsCollection = database.collection("bookings");
-    const usersCollection = database.collection("users");
+    const usersCollection = database.collection("user");
 
     // JWT Token Generation
     app.post("/jwt", async (req, res) => {
