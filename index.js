@@ -12,6 +12,7 @@ const { client, connectDB } = require("./Config/db");
 
 const doctorsRoutes = require("./routes/doctorsRoutes");
 const bookingsRoutes = require("./routes/bookingsRoutes");
+const verifyJWT = require("./middlewares/verifyJWT");
 
 const app = express();
 
@@ -38,9 +39,10 @@ async function startServer() {
     const database = client.db("DocAppoint");
 
     const doctorsCollection = database.collection("doctors");
-
     const bookingsCollection = database.collection("bookings");
+    const usersCollection = database.collection("users"); // Added users collection
 
+    // JWT Token Generation
     app.post("/jwt", async (req, res) => {
       try {
         const user = req.body;
@@ -65,6 +67,55 @@ async function startServer() {
       }
     });
 
+    // Profile Update API Endpoint for MongoDB
+    app.patch("/api/users/profile", verifyJWT, async (req, res) => {
+      try {
+        const { name, phone, phoneNumber, image, avatar } = req.body;
+        
+        // Extract email from JWT decoded token
+        const email = req.decoded?.email;
+
+        if (!email) {
+          return res.status(400).send({
+            success: false,
+            message: "User email not found in auth token",
+          });
+        }
+
+        const userPhone = phone || phoneNumber;
+        const userImage = image || avatar;
+
+        const filter = { email: email };
+        const updateDoc = {
+          $set: {
+            email: email,
+            ...(name && { name }),
+            ...(userPhone && { phone: userPhone }),
+            ...(userImage && { image: userImage }),
+            updatedAt: new Date(),
+          },
+        };
+
+        // upsert: true ensures document is created if user record doesn't exist yet
+        const options = { upsert: true };
+
+        const result = await usersCollection.updateOne(filter, updateDoc, options);
+
+        res.status(200).send({
+          success: true,
+          message: "Profile updated successfully in MongoDB!",
+          data: result,
+        });
+      } catch (error) {
+        console.error("Error updating profile:", error);
+        res.status(500).send({
+          success: false,
+          message: "Failed to update profile",
+        });
+      }
+    });
+
+    // Existing Routes
     app.use(
       "/api/doctors",
       doctorsRoutes(doctorsCollection)
