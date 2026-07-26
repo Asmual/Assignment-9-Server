@@ -40,7 +40,7 @@ async function startServer() {
 
     const doctorsCollection = database.collection("doctors");
     const bookingsCollection = database.collection("bookings");
-    const usersCollection = database.collection("users"); // Added users collection
+    const usersCollection = database.collection("users");
 
     // JWT Token Generation
     app.post("/jwt", async (req, res) => {
@@ -67,28 +67,68 @@ async function startServer() {
       }
     });
 
-    // Profile Update API Endpoint for MongoDB
-    app.patch("/api/users/profile", verifyJWT, async (req, res) => {
+    // GET User Profile from MongoDB (Used for restoring state after page refresh)
+    app.get("/api/users/profile", async (req, res) => {
       try {
-        const { name, phone, phoneNumber, image, avatar } = req.body;
-        
-        // Extract email from JWT decoded token
-        const email = req.decoded?.email;
+        const email = req.query.email;
 
         if (!email) {
           return res.status(400).send({
             success: false,
-            message: "User email not found in auth token",
+            message: "Email query parameter is required",
+          });
+        }
+
+        const user = await usersCollection.findOne({ email: email });
+
+        res.status(200).send({
+          success: true,
+          data: user || null,
+        });
+      } catch (error) {
+        console.error("Error fetching user profile:", error);
+        res.status(500).send({
+          success: false,
+          message: "Failed to fetch user profile",
+        });
+      }
+    });
+
+    // PATCH Update User Profile in MongoDB
+    app.patch("/api/users/profile", async (req, res) => {
+      try {
+        // Optional Bearer token check
+        let tokenEmail = null;
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+          const token = authHeader.split(" ")[1];
+          try {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            tokenEmail = decoded?.email;
+          } catch (jwtErr) {
+            console.log("Optional JWT verification bypassed or token expired");
+          }
+        }
+
+        const { name, phone, phoneNumber, image, avatar, email: bodyEmail } = req.body;
+
+        // Use JWT decoded email OR explicit body email
+        const targetEmail = tokenEmail || bodyEmail;
+
+        if (!targetEmail) {
+          return res.status(400).send({
+            success: false,
+            message: "User email is required to update profile",
           });
         }
 
         const userPhone = phone || phoneNumber;
         const userImage = image || avatar;
 
-        const filter = { email: email };
+        const filter = { email: targetEmail };
         const updateDoc = {
           $set: {
-            email: email,
+            email: targetEmail,
             ...(name && { name }),
             ...(userPhone && { phone: userPhone }),
             ...(userImage && { image: userImage }),
@@ -96,7 +136,6 @@ async function startServer() {
           },
         };
 
-        // upsert: true ensures document is created if user record doesn't exist yet
         const options = { upsert: true };
 
         const result = await usersCollection.updateOne(filter, updateDoc, options);
@@ -107,7 +146,7 @@ async function startServer() {
           data: result,
         });
       } catch (error) {
-        console.error("Error updating profile:", error);
+        console.error("Error updating profile in DB:", error);
         res.status(500).send({
           success: false,
           message: "Failed to update profile",
