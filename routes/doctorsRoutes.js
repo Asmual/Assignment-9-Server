@@ -1,6 +1,11 @@
 const express = require("express");
 const { ObjectId } = require("mongodb");
 
+// Helper function to safely escape regex special characters
+function escapeRegex(text) {
+  return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+}
+
 function doctorsRoutes(doctorsCollection) {
   const router = express.Router();
 
@@ -17,28 +22,29 @@ function doctorsRoutes(doctorsCollection) {
     }
   });
 
-  // SEARCH DOCTORS (Must be placed before /:id route)
+  // SEARCH DOCTORS (Must be declared before /:id route)
   router.get("/search", async (req, res) => {
     try {
-      const query = req.query.query;
+      const searchQuery = req.query.query ? req.query.query.trim() : "";
 
-      if (!query || query.trim() === "") {
+      if (!searchQuery) {
         return res.status(200).send({
           success: true,
           doctors: [],
         });
       }
 
-      // Case-insensitive regex search
-      const searchRegex = new RegExp(query, "i");
+      // Escape special characters and perform a case-insensitive regex search
+      const sanitizedQuery = escapeRegex(searchQuery);
+      const searchRegex = new RegExp(sanitizedQuery, "i");
 
       const result = await doctorsCollection
         .find({
           $or: [
-            { name: searchRegex },
-            { specialty: searchRegex },
-            { designation: searchRegex },
-            { hospital: searchRegex },
+            { name: { $regex: searchRegex } },
+            { specialty: { $regex: searchRegex } },
+            { designation: { $regex: searchRegex } },
+            { hospital: { $regex: searchRegex } },
           ],
         })
         .limit(10)
@@ -57,7 +63,7 @@ function doctorsRoutes(doctorsCollection) {
     }
   });
 
-  // GET SINGLE DOCTOR
+  // GET SINGLE DOCTOR BY ID
   router.get("/:id", async (req, res) => {
     try {
       const id = req.params.id;
